@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: msp-browser
+    env: docker
+    healthCheckPath: /status
+    autoDeploy: true
