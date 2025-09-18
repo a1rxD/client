@@ -1,4 +1,5 @@
 import os, sys, shutil, tempfile, subprocess, threading, time, asyncio, base64
+
 from fastapi import FastAPI, Query, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse
 from starlette.staticfiles import StaticFiles
@@ -49,7 +50,9 @@ a{color:#9ddcff;text-decoration:none}
     <button type="submit">Play MovieStarPlanet</button>
   </form>
   <div id="status"></div>
-  <div style="margin-top:8px"><a href="/logs?type=out" target="_blank">stdout</a> · <a href="/logs?type=err" target="_blank">stderr</a></div>
+  <div style="margin-top:8px">
+    <a href="/logs?type=out" target="_blank">stdout</a> · <a href="/logs?type=err" target="_blank">stderr</a> · <a href="/diag" target="_blank">diag</a>
+  </div>
 </div></div>
 <script>
 const s=document.getElementById("status"); let poll=null;
@@ -85,6 +88,13 @@ def start_x_stack():
     xvfb=subprocess.Popen(["Xvfb",":99","-screen","0","1280x800x24","-ac"])
     time.sleep(0.7)
     env=dict(os.environ); env["DISPLAY"]=":99"
+    # Initialize a 32-bit Wine prefix so 32-bit adl.exe can run
+    env.setdefault("WINEPREFIX", os.environ.get("WINEPREFIX", "/wine32"))
+    env.setdefault("WINEARCH", os.environ.get("WINEARCH", "win32"))
+    try:
+        subprocess.run(["wineboot","-i"], env=env, timeout=40)
+    except Exception:
+        pass
     wm=subprocess.Popen(["fluxbox"],env=env)
     vnc=subprocess.Popen(["x11vnc","-display",":99","-localhost","-forever","-shared","-nopw","-rfbport","5900"])
     PROCS.update({"xvfb":xvfb,"wm":wm,"vnc":vnc})
@@ -109,16 +119,17 @@ def preflight():
     return True,{"adl":adl,"resources":resources}
 
 def build_cmd(adl, appxml, tmpdir):
+    screensize=os.environ.get("SCREENSIZE","1280x800:1280x800")
     use_wine=str(adl).lower().endswith(".exe")
     if use_wine and sys.platform.startswith("linux"):
-        return ["wine",adl,"-nodebug",appxml,tmpdir]
-    return [adl,"-nodebug",appxml,tmpdir]
+        return ["wine", adl, "-nodebug", "-screensize", screensize, appxml, tmpdir]
+    return [adl, "-nodebug", "-screensize", screensize, appxml, tmpdir]
 
 def sweep_tmp_later(path):
     def f():
         try: shutil.rmtree(path, ignore_errors=True)
         except: pass
-    threading.Timer(30.0,f).start()
+    threading.Timer(40.0,f).start()
 
 def run_swf(country):
     ok,data=preflight()
@@ -137,25 +148,38 @@ def run_swf(country):
         with open(appxml,"w",encoding="utf-8") as f: f.write(APP_XML.format(content=swf))
         out=os.path.join(tmp,"adl.out"); err=os.path.join(tmp,"adl.err")
         cmd=build_cmd(adl,appxml,tmp)
-        env=dict(os.environ); env["DISPLAY"]=":99"; env["WINEDEBUG"]="-all"
+
+        env=dict(os.environ)
+        env["DISPLAY"]=":99"
+        env.setdefault("WINEPREFIX", os.environ.get("WINEPREFIX", "/wine32"))
+        env.setdefault("WINEARCH", os.environ.get("WINEARCH", "win32"))
+        env["WINEDEBUG"]="-all"
+
         with open(out,"wb") as so, open(err,"wb") as se:
             p=subprocess.Popen(cmd,cwd=tmp,stdout=so,stderr=se,env=env)
+
         with LOCK: STATE.update({"phase":"starting","message":"ADL starting","pid":p.pid,"code":None,"tmp":tmp})
+
+        # wait briefly; if still alive we assume the window exists
         t0=time.time()
-        while time.time()-t0<3:
+        while time.time()-t0<5:
             if p.poll() is None:
-                with LOCK: STATE.update({"phase":"running","message":"SWF launched (browser stream)","pid":p.pid,"code":None})
-                return
-            time.sleep(0.1)
-        rc=p.poll()
-        if rc is None:
+                time.sleep(0.2)
+            else:
+                break
+
+        if p.poll() is None:
             with LOCK: STATE.update({"phase":"running","message":"SWF launched (browser stream)","pid":p.pid,"code":None})
             return
+
+        # Exited early -> surface error text
+        rc=p.returncode
         try:
-            with open(err,"rb") as se: em=se.read()[:2048].decode(errors="ignore")
-        except:
+            with open(err,"r",encoding="utf-8",errors="ignore") as se:
+                em=se.read()[-2000:]
+        except Exception:
             em=""
-        with LOCK: STATE.update({"phase":"error","message":f"ADL exited {rc}. {em.strip()}","pid":None,"code":rc})
+        with LOCK: STATE.update({"phase":"error","message":f"ADL exited {rc}. {em}".strip(),"pid":None,"code":rc})
     except Exception as e:
         with LOCK: STATE.update({"phase":"error","message":str(e),"pid":None,"code":1})
     finally:
@@ -182,7 +206,7 @@ def play():
             "<!DOCTYPE html><meta charset='utf-8'><body style='margin:0;background:#000;color:#fff;font:14px system-ui;padding:16px'>"
             "noVNC not found. Use Docker with the provided Dockerfile or add ./novnc.</body>"
         )
-    # NOTE: no leading slash -> 'path=ws' prevents //ws in URL
+    # no leading slash to avoid //ws
     u="/novnc/vnc_lite.html?path=ws&autoconnect=true&resize=scale&reconnect=1&quality=6&title=MovieStarPlanet"
     return (
         "<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -216,6 +240,21 @@ def logs(type: str = Query("out")):
     except:
         return PlainTextResponse("unreadable", status_code=500)
 
+@app.get("/diag", response_class=PlainTextResponse)
+def diag():
+    base=os.path.dirname(os.path.abspath(__file__))
+    adl=find_adl(base)
+    out=[]
+    out.append(f"ADL: {adl or 'NOT FOUND'}")
+    out.append(f"DISPLAY={os.environ.get('DISPLAY','')}")
+    out.append(f"WINEPREFIX={os.environ.get('WINEPREFIX','/wine32')} WINEARCH={os.environ.get('WINEARCH','win32')}")
+    try:
+        v=subprocess.check_output(["wine","--version"]).decode().strip()
+        out.append(f"wine: {v}")
+    except Exception as e:
+        out.append(f"wine: error ({e})")
+    return "\n".join(out)
+
 @app.post("/launch")
 def launch(code: str = Query("gb")):
     ok,_=preflight()
@@ -226,7 +265,7 @@ def launch(code: str = Query("gb")):
     threading.Thread(target=run_swf, args=(code,), daemon=True).start()
     return JSONResponse({"ok":True,"message":"Launching..."})
 
-# ---- WebSocket bridge (supports 'binary' or 'base64') ----
+# ---- WebSocket bridge (binary/base64) + aliases
 @app.websocket("/ws")
 async def ws_proxy(ws: WebSocket):
     req = (ws.headers.get("sec-websocket-protocol") or "").replace(" ", "").split(",")
@@ -271,13 +310,12 @@ async def ws_proxy(ws: WebSocket):
 
     await asyncio.gather(ws_to_tcp(), tcp_to_ws())
 
-# extra aliases some noVNC builds expect
 @app.websocket("/websockify")
-async def ws_proxy_websockify(ws: WebSocket):  # alias
+async def ws_proxy_websockify(ws: WebSocket):
     await ws_proxy(ws)
 
 @app.websocket("/novnc/ws")
-async def ws_proxy_under_novnc(ws: WebSocket):  # alias
+async def ws_proxy_under_novnc(ws: WebSocket):
     await ws_proxy(ws)
 
 def main():
