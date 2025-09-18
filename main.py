@@ -1,6 +1,6 @@
 import os, sys, shutil, tempfile, subprocess, threading, time
 from fastapi import FastAPI, Form, Query
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse
 import uvicorn
 
 APP_XML = """<?xml version="1.0" encoding="utf-8"?>
@@ -83,7 +83,7 @@ def build_cmd(adl, appxml, tmpdir):
         parts+=["-nodebug",appxml,tmpdir]
         return parts
     headless=os.environ.get("HEADLESS","1")!="0"
-    use_wine=adl.lower().endswith(".exe")
+    use_wine=str(adl).lower().endswith(".exe")
     if headless and use_wine and sys.platform.startswith("linux"):
         return ["xvfb-run","-a","-s","-screen 0 1280x800x24","wine",adl,"-nodebug",appxml,tmpdir]
     if headless and not use_wine and sys.platform.startswith("linux"):
@@ -144,7 +144,13 @@ app=FastAPI()
 @app.get("/",response_class=HTMLResponse)
 def index():
     opts="".join([f'<option value="{c}">{n}</option>' for c,n in COUNTRIES])
-    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MSP</title><style>html,body{{height:100%;margin:0;background:#0b1020;color:#fff;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif}}.wrap{{display:flex;align-items:center;justify-content:center;height:100%}}.card{{background:rgba(255,255,255,.06);backdrop-filter:blur(8px);padding:24px 20px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);width:360px}}select,button{{appearance:none;background:rgba(0,0,0,.35);color:#fff;border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:12px 16px;font-size:16px;outline:none;width:100%}}button{{margin-top:10px;cursor:pointer}}#status{{margin-top:10px;font-size:12px;opacity:.9;white-space:pre-wrap}}a{{color:#9ddcff;text-decoration:none}}</style></head><body><div class="wrap"><div class="card"><h1 style="margin:0 0 12px 0;font-size:18px">Choose country</h1><form id="f"><select name="code">{opts}</select><button type="submit">Launch SWF</button></form><div id="status"></div><div style="margin-top:8px"><a href="/logs?type=out" target="_blank">stdout</a> · <a href="/logs?type=err" target="_blank">stderr</a></div></div></div><script>const s=document.getElementById("status");let poll=null;document.getElementById("f").addEventListener("submit",async e=>{{e.preventDefault();s.textContent="Launching...";if(poll){{clearInterval(poll);poll=null}};const d=new FormData(e.target);const r=await fetch("/launch",{{method:"POST",body:d}});const j=await r.json();if(!j.ok){{s.textContent=j.message;return}};poll=setInterval(async()=>{{const rs=await fetch("/status");const js=await rs.json();s.textContent=js.phase.toUpperCase()+": "+js.message;if(js.phase==="running"||js.phase==="error"){{clearInterval(poll);poll=null}}}},700)}}</script></body></html>"""
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MSP</title><style>html,body{{height:100%;margin:0;color:#fff;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif}}body{{background-image:linear-gradient(rgba(0,0,0,.55),rgba(0,0,0,.55)),url('/background.jpg');background-position:center;background-size:cover;background-attachment:fixed;background-repeat:no-repeat}}.wrap{{display:flex;align-items:center;justify-content:center;height:100%}}.card{{background:rgba(255,255,255,.08);backdrop-filter:blur(8px);padding:24px 20px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.35);width:360px}}select,button{{appearance:none;background:rgba(0,0,0,.35);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px 16px;font-size:16px;outline:none;width:100%}}button{{margin-top:10px;cursor:pointer}}#status{{margin-top:10px;font-size:12px;opacity:.95;white-space:pre-wrap}}a{{color:#9ddcff;text-decoration:none}}</style></head><body><div class="wrap"><div class="card"><h1 style="margin:0 0 12px 0;font-size:18px">Choose country</h1><form id="f"><select name="code">{opts}</select><button type="submit">Play MovieStarPlanet</button></form><div id="status"></div><div style="margin-top:8px"><a href="/logs?type=out" target="_blank">stdout</a> · <a href="/logs?type=err" target="_blank">stderr</a></div></div></div><script>const s=document.getElementById("status");let poll=null;document.getElementById("f").addEventListener("submit",async e=>{{e.preventDefault();s.textContent="Launching...";if(poll){{clearInterval(poll);poll=null}};const d=new FormData(e.target);const r=await fetch("/launch",{{method:"POST",body:d}});const j=await r.json();if(!j.ok){{s.textContent=j.message;return}};poll=setInterval(async()=>{{const rs=await fetch("/status");const js=await rs.json();s.textContent=js.phase.toUpperCase()+\": \"+js.message;if(js.phase===\"running\"||js.phase===\"error\"){{clearInterval(poll);poll=null}}}},700)}}</script></body></html>"""
+
+@app.get("/background.jpg")
+def bg():
+    if os.path.exists("background.jpg"):
+        return FileResponse("background.jpg", media_type="image/jpeg")
+    return PlainTextResponse("not found",status_code=404)
 
 @app.get("/status")
 def status():
