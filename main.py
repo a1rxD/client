@@ -30,6 +30,14 @@ STATE={"phase":"idle","message":"","pid":None,"code":None,"tmp":None}
 LOCK=threading.Lock()
 PROCS={"xvfb":None,"wm":None,"vnc":None}
 
+def resolve_novnc_dir():
+    d=os.environ.get("NOVNC_DIR","/opt/novnc")
+    if os.path.isdir(d):
+        return d
+    if os.path.isdir("./novnc"):
+        return "./novnc"
+    return None
+
 def start_x_stack():
     if PROCS["xvfb"] and PROCS["xvfb"].poll() is None:
         return
@@ -121,16 +129,12 @@ def run_swf(country):
 
 app=FastAPI()
 
-NOVNC_DIR=os.environ.get("NOVNC_DIR","/opt/novnc")
-if os.path.isdir(NOVNC_DIR):
+NOVNC_DIR=resolve_novnc_dir()
+if NOVNC_DIR:
     app.mount("/novnc", StaticFiles(directory=NOVNC_DIR, html=True), name="novnc")
 
 @app.on_event("startup")
 def boot():
-    global NOVNC_DIR
-    if not os.path.isdir(NOVNC_DIR) and os.path.isdir("./novnc"):
-        NOVNC_DIR="./novnc"
-        app.mount("/novnc", StaticFiles(directory=NOVNC_DIR, html=True), name="novnc")
     start_x_stack()
 
 @app.get("/",response_class=HTMLResponse)
@@ -140,7 +144,7 @@ def index():
 
 @app.get("/play",response_class=HTMLResponse)
 def play():
-    if not os.path.isdir(NOVNC_DIR):
+    if not NOVNC_DIR:
         return HTMLResponse("<!DOCTYPE html><meta charset='utf-8'><body style='margin:0;background:#000;color:#fff;font:14px system-ui;padding:16px'>noVNC not found. Use Docker with the provided Dockerfile or add noVNC to ./novnc.</body>")
     u="/novnc/vnc_lite.html?path=/ws&autoconnect=true&resize=scale&reconnect=1&quality=6&title=MovieStarPlanet"
     return f"<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>MovieStarPlanet</title><style>html,body{{height:100%;margin:0;background:#000}}</style><script>location.href='{u}';</script><a href='{u}' style='color:#8cf'>Open Viewer</a>"
