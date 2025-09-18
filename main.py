@@ -1,4 +1,4 @@
-import os, sys, shutil, tempfile, subprocess, threading, time, asyncio
+import os, sys, shutil, tempfile, subprocess, threading, time, asyncio, base64
 from fastapi import FastAPI, Query, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse
 from starlette.staticfiles import StaticFiles
@@ -29,12 +29,10 @@ LOCK=threading.Lock()
 PROCS={"xvfb":None,"wm":None,"vnc":None}
 
 def resolve_novnc_dir():
-    d=os.environ.get("NOVNC_DIR","/opt/novnc")
-    if os.path.isdir(d):
-        return d
-    if os.path.isdir("./novnc"):
-        return "./novnc"
-    return None
+    d=os.path.join("/opt","novnc")
+    if os.path.isdir(d): return d
+    d2="./novnc"
+    return d2 if os.path.isdir(d2) else None
 
 def start_x_stack():
     if PROCS["xvfb"] and PROCS["xvfb"].poll() is None:
@@ -48,28 +46,21 @@ def start_x_stack():
 
 def find_adl(base):
     override=os.environ.get("ADL_PATH","").strip()
-    if override and os.path.exists(override):
-        return override
+    if override and os.path.exists(override): return override
     sdk=os.environ.get("AIRSDK_HOME","").strip()
     local=os.path.join(base,"AIRSDK_51.2.2")
-    if not sdk and os.path.isdir(local):
-        sdk=local
-    if not sdk:
-        return None
-    p1=os.path.join(sdk,"bin","adl.exe")
-    p2=os.path.join(sdk,"bin","adl")
+    if not sdk and os.path.isdir(local): sdk=local
+    if not sdk: return None
+    p1=os.path.join(sdk,"bin","adl.exe"); p2=os.path.join(sdk,"bin","adl")
     return p1 if os.path.exists(p1) else (p2 if os.path.exists(p2) else None)
 
 def preflight():
     base=os.path.dirname(os.path.abspath(__file__))
     adl=find_adl(base)
-    if not adl:
-        return False,"AIRSDK/ADL not found"
+    if not adl: return False,"AIRSDK/ADL not found"
     resources=os.path.join(base,"Resources")
-    if not os.path.isdir(resources):
-        return False,"Resources folder not found"
-    if not os.path.exists(os.path.join(resources,"MovieStarPlanet.swf")):
-        return False,"MovieStarPlanet.swf missing"
+    if not os.path.isdir(resources): return False,"Resources folder not found"
+    if not os.path.exists(os.path.join(resources,"MovieStarPlanet.swf")): return False,"MovieStarPlanet.swf missing"
     return True,{"adl":adl,"resources":resources}
 
 def build_cmd(adl, appxml, tmpdir):
@@ -143,7 +134,8 @@ def index():
 def play():
     if not NOVNC_DIR:
         return HTMLResponse("<!DOCTYPE html><meta charset='utf-8'><body style='margin:0;background:#000;color:#fff;font:14px system-ui;padding:16px'>noVNC not found. Use Docker with the provided Dockerfile or add noVNC to ./novnc.</body>")
-    u="/novnc/vnc_lite.html?path=/ws&autoconnect=true&resize=scale&reconnect=1&quality=6&title=MovieStarPlanet"
+    # Use relative 'ws' path so noVNC hits this app at /ws
+    u="/novnc/vnc_lite.html?path=ws&autoconnect=true&resize=scale&reconnect=1&quality=6&title=MovieStarPlanet"
     return f"<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>MovieStarPlanet</title><style>html,body{{height:100%;margin:0;background:#000}}</style><script>location.href='{u}';</script><a href='{u}' style='color:#8cf'>Open Viewer</a>"
 
 @app.get("/background.jpg")
@@ -184,34 +176,58 @@ def launch(code: str = Query("gb")):
 
 @app.websocket("/ws")
 async def ws_proxy(ws: WebSocket):
-    await ws.accept()
+    # Negotiate subprotocol with noVNC: prefer 'binary', fallback to 'base64'
+    req_subs = (ws.headers.get("sec-websocket-protocol") or "").replace(" ", "").split(",")
+    sub = "binary" if "binary" in req_subs else ("base64" if "base64" in req_subs else None)
+    if sub:
+        await ws.accept(subprotocol=sub)
+    else:
+        await ws.accept()
+    use_base64 = (sub == "base64")
     try:
-        reader, writer = await asyncio.open_connection("127.0.0.1",5900)
-    except:
+        reader, writer = await asyncio.open_connection("127.0.0.1", 5900)
+    except Exception:
         await ws.close(code=1011)
         return
+
     async def ws_to_tcp():
         try:
             while True:
-                b = await ws.receive_bytes()
-                writer.write(b)
-                await writer.drain()
-        except:
+                message = await ws.receive()
+                t = message.get("type")
+                if t == "websocket.receive":
+                    if message.get("bytes") is not None:
+                        data = message["bytes"]
+                    else:
+                        txt = message.get("text") or ""
+                        data = base64.b64decode(txt) if use_base64 else txt.encode("latin1", "ignore")
+                    if data:
+                        writer.write(data)
+                        await writer.drain()
+                elif t == "websocket.disconnect":
+                    break
+        except Exception:
             pass
         finally:
             try: writer.close()
             except: pass
+
     async def tcp_to_ws():
         try:
             while True:
-                b = await reader.read(65536)
-                if not b: break
-                await ws.send_bytes(b)
-        except:
+                data = await reader.read(32768)
+                if not data:
+                    break
+                if use_base64:
+                    await ws.send_text(base64.b64encode(data).decode("ascii"))
+                else:
+                    await ws.send_bytes(data)
+        except Exception:
             pass
         finally:
             try: await ws.close()
             except: pass
+
     await asyncio.gather(ws_to_tcp(), tcp_to_ws())
 
 def main():
