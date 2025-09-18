@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<application xmlns="http://ns.adobe.com/air/application/32.0">
+
+		<id>MovieStarPlanet</id>
+		<filename>MovieStarPlanet</filename>
+		<name>MovieStarPlanet</name>
+
+		<versionNumber>1.0.6</versionNumber>
+		<initialWindow>
+				<content>MovieStarPlanet.swf</content>
+				<autoOrients>false</autoOrients>
+        <fullScreen>false</fullScreen>
+        <visible>true</visible>
+		</initialWindow>
+
+		<supportedProfiles>extendedDesktop</supportedProfiles>
+
+</application>
