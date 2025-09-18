@@ -182,7 +182,7 @@ def run_swf(country):
         for n in os.listdir(resources):
             s=os.path.join(resources,n); d=os.path.join(tmp,n)
             shutil.copytree(s,d) if os.path.isdir(s) else shutil.copy2(s,d)
-        swf="MovieStarPlanet.swf"+(f"?country={country}" if country else "")
+        swf = "MovieStarPlanet.swf" 
         appxml=os.path.join(tmp,"application.xml")
         with open(appxml,"w",encoding="utf-8") as f: f.write(APP_XML.format(content=swf))
         out=os.path.join(tmp,"adl.out"); err=os.path.join(tmp,"adl.err")
