@@ -21,12 +21,41 @@ APP_XML = """<?xml version="1.0" encoding="utf-8"?>
 </application>
 """
 
-HTML_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MSP</title><style>html,body{height:100%;margin:0;color:#fff;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif}body{background-image:linear-gradient(rgba(0,0,0,.55),rgba(0,0,0,.55)),url('/background.jpg');background-position:center;background-size:cover;background-attachment:fixed;background-repeat:no-repeat}.wrap{display:flex;align-items:center;justify-content:center;height:100%}.card{background:rgba(255,255,255,.08);backdrop-filter:blur(8px);padding:24px 20px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.35);width:360px}select,button{appearance:none;background:rgba(0,0,0,.35);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px 16px;font-size:16px;outline:none;width:100%}button{margin-top:10px;cursor:pointer}#status{margin-top:10px;font-size:12px;opacity:.95;white-space:pre-wrap}a{color:#9ddcff;text-decoration:none}</style></head><body><div class="wrap"><div class="card"><h1 style="margin:0 0 12px 0;font-size:18px">Choose country</h1><form id="f"><select name="code">__OPTS__</select><button type="submit">Play MovieStarPlanet</button></form><div id="status"></div><div style="margin-top:8px"><a href="/logs?type=out" target="_blank">stdout</a> · <a href="/logs?type=err" target="_blank">stderr</a></div></div></div><script>const s=document.getElementById("status");let poll=null;document.getElementById("f").addEventListener("submit",async e=>{e.preventDefault();s.textContent="Launching...";if(poll){clearInterval(poll);poll=null};const d=new FormData(e.target);const r=await fetch("/launch",{method:"POST",body:d});const j=await r.json();if(!j.ok){s.textContent=j.message;return};poll=setInterval(async()=>{const rs=await fetch("/status");const js=await rs.json();s.textContent=js.phase.toUpperCase()+": "+js.message;if(js.phase==="running"||js.phase==="error"){clearInterval(poll);poll=null}},700)})</script></body></html>"""
+HTML_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MSP</title><style>html,body{height:100%;margin:0;color:#fff;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif}body{background-image:linear-gradient(rgba(0,0,0,.55),rgba(0,0,0,.55)),url('/background.jpg');background-position:center;background-size:cover;background-attachment:fixed;background-repeat:no-repeat}.wrap{display:flex;align-items:center;justify-content:center;height:100%}.card{background:rgba(255,255,255,.08);backdrop-filter:blur(8px);padding:24px 20px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.35);width:360px}select,button{appearance:none;background:rgba(0,0,0,.35);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px 16px;font-size:16px;outline:none;width:100%}button{margin-top:10px;cursor:pointer}#status{margin-top:10px;font-size:12px;opacity:.95;white-space:pre-wrap}a{color:#9ddcff;text-decoration:none}</style></head><body><div class="wrap"><div class="card"><h1 style="margin:0 0 12px 0;font-size:18px">Choose country</h1><form id="f"><select name="code">__OPTS__</select><button type="submit">Play MovieStarPlanet</button></form><div id="status"></div><div style="margin-top:8px"><a href="/logs?type=out" target="_blank">stdout</a> · <a href="/logs?type=err" target="_blank">stderr</a></div></div></div><script>const s=document.getElementById("status");let poll=null;document.getElementById("f").addEventListener("submit",async e=>{e.preventDefault();s.textContent="Launching...";if(poll){clearInterval(poll);poll=null};const d=new FormData(e.target);const r=await fetch("/launch",{method:"POST",body:d});const j=await r.json();if(!j.ok){s.textContent=j.message;return};const u=j.redirect||"/";poll=setInterval(async()=>{const rs=await fetch("/status");const js=await rs.json();s.textContent=js.phase.toUpperCase()+": "+js.message;if(js.phase==="running"||js.phase==="error"){clearInterval(poll);poll=null;location.href=u}},600)})</script></body></html>"""
 
 COUNTRIES=[("gb","United Kingdom"),("au","Australia"),("ca","Canada"),("de","Deutschland"),("dk","Danmark"),("es","España"),("fr","France"),("ie","Ireland"),("nl","Nederland"),("nz","New Zealand"),("no","Norge"),("pl","Polska"),("fi","Suomi"),("se","Sverige"),("tr","Türkiye"),("us","United States")]
 
+COUNTRY_URLS={
+    "gb":"https://www.moviestarplanet.co.uk/",
+    "au":"https://www.moviestarplanet.com.au/",
+    "ca":"https://www.moviestarplanet.com/",
+    "de":"https://www.moviestarplanet.de/",
+    "dk":"https://www.moviestarplanet.dk/",
+    "es":"https://www.moviestarplanet.es/",
+    "fr":"https://www.moviestarplanet.fr/",
+    "ie":"https://www.moviestarplanet.ie/",
+    "nl":"https://www.moviestarplanet.nl/",
+    "nz":"https://www.moviestarplanet.co.nz/",
+    "no":"https://www.moviestarplanet.no/",
+    "pl":"https://www.moviestarplanet.pl/",
+    "fi":"https://www.moviestarplanet.fi/",
+    "se":"https://www.moviestarplanet.se/",
+    "tr":"https://www.moviestarplanet.com.tr/",
+    "us":"https://www.moviestarplanet.com/"
+}
+
 STATE={"phase":"idle","message":"","pid":None,"code":None,"tmp":None}
 LOCK=threading.Lock()
+
+def country_url(code):
+    k=f"MSP_URL_{code.upper()}"
+    v=os.environ.get(k,"").strip()
+    if v:
+        return v
+    d=os.environ.get("MSP_URL","").strip()
+    if d:
+        return d
+    return COUNTRY_URLS.get(code.lower(),"https://www.moviestarplanet.com/")
 
 def find_adl(base):
     override=os.environ.get("ADL_PATH","").strip()
@@ -183,7 +212,7 @@ def launch(code: str = Form("")):
         return JSONResponse({"ok":False,"message":STATE["message"]})
     with LOCK: STATE.update({"phase":"launch","message":"Launching...","pid":None,"code":None})
     threading.Thread(target=run_swf,args=(code,),daemon=True).start()
-    return JSONResponse({"ok":True,"message":"Launching..."})
+    return JSONResponse({"ok":True,"message":"Launching...","redirect":country_url(code)})
 
 def main():
     port=int(os.environ.get("PORT","8000"))
