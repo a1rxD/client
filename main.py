@@ -1,4 +1,4 @@
-import os, sys, shutil, tempfile, subprocess, threading, time, asyncio, socket
+import os, sys, shutil, tempfile, subprocess, threading, time, asyncio
 from fastapi import FastAPI, Form, Query, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse
 from starlette.staticfiles import StaticFiles
@@ -42,27 +42,33 @@ def start_x_stack():
 
 def find_adl(base):
     override=os.environ.get("ADL_PATH","").strip()
-    if override and os.path.exists(override): return override
+    if override and os.path.exists(override):
+        return override
     sdk=os.environ.get("AIRSDK_HOME","").strip()
     local=os.path.join(base,"AIRSDK_51.2.2")
-    if not sdk and os.path.isdir(local): sdk=local
-    if not sdk: return None
-    p1=os.path.join(sdk,"bin","adl.exe"); p2=os.path.join(sdk,"bin","adl")
+    if not sdk and os.path.isdir(local):
+        sdk=local
+    if not sdk:
+        return None
+    p1=os.path.join(sdk,"bin","adl.exe")
+    p2=os.path.join(sdk,"bin","adl")
     return p1 if os.path.exists(p1) else (p2 if os.path.exists(p2) else None)
 
 def preflight():
     base=os.path.dirname(os.path.abspath(__file__))
     adl=find_adl(base)
-    if not adl: return False,"AIRSDK/ADL not found"
+    if not adl:
+        return False,"AIRSDK/ADL not found"
     resources=os.path.join(base,"Resources")
-    if not os.path.isdir(resources): return False,"Resources folder not found"
-    if not os.path.exists(os.path.join(resources,"MovieStarPlanet.swf")): return False,"MovieStarPlanet.swf missing"
+    if not os.path.isdir(resources):
+        return False,"Resources folder not found"
+    if not os.path.exists(os.path.join(resources,"MovieStarPlanet.swf")):
+        return False,"MovieStarPlanet.swf missing"
     return True,{"adl":adl,"resources":resources}
 
 def build_cmd(adl, appxml, tmpdir):
-    headless=True
     use_wine=str(adl).lower().endswith(".exe")
-    if headless and use_wine and sys.platform.startswith("linux"):
+    if use_wine and sys.platform.startswith("linux"):
         return ["wine",adl,"-nodebug",appxml,tmpdir]
     return [adl,"-nodebug",appxml,tmpdir]
 
