@@ -120,11 +120,17 @@ def run_swf(country):
         sweep_tmp_later(tmp)
 
 app=FastAPI()
-app.mount("/novnc", StaticFiles(directory="/opt/novnc", html=True), name="novnc")
+
+NOVNC_DIR=os.environ.get("NOVNC_DIR","/opt/novnc")
+if os.path.isdir(NOVNC_DIR):
+    app.mount("/novnc", StaticFiles(directory=NOVNC_DIR, html=True), name="novnc")
 
 @app.on_event("startup")
 def boot():
-    start_x_stack()
+    if not os.path.isdir(NOVNC_DIR) and os.path.isdir("./novnc"):
+        global NOVNC_DIR
+        NOVNC_DIR="./novnc"
+        app.mount("/novnc", StaticFiles(directory=NOVNC_DIR, html=True), name="novnc")
 
 @app.get("/",response_class=HTMLResponse)
 def index():
@@ -133,8 +139,10 @@ def index():
 
 @app.get("/play",response_class=HTMLResponse)
 def play():
+    if not os.path.isdir(NOVNC_DIR):
+        return HTMLResponse("<!DOCTYPE html><meta charset='utf-8'><body style='margin:0;background:#000;color:#fff;font:14px system-ui;padding:16px'>noVNC not found. Use Docker with the provided Dockerfile or add the noVNC folder to ./novnc in your repo.</body>")
     u="/novnc/vnc_lite.html?path=ws&autoconnect=true&resize=scale&reconnect=1&quality=6&title=MovieStarPlanet"
-    return f"""<!DOCTYPE html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MovieStarPlanet</title><style>html,body{{height:100%;margin:0;background:#000}}</style><script>location.href="{u}";</script><a href="{u}" style="color:#8cf">Open Viewer</a>"""
+    return f"<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>MovieStarPlanet</title><style>html,body{{height:100%;margin:0;background:#000}}</style><script>location.href='{u}';</script><a href='{u}' style='color:#8cf'>Open Viewer</a>"
 
 @app.get("/background.jpg")
 def bg():
