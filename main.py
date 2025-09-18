@@ -22,7 +22,54 @@ APP_XML = """<?xml version="1.0" encoding="utf-8"?>
 </application>
 """
 
-HTML_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MSP</title><style>html,body{height:100%;margin:0;color:#fff;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif}body{background-image:linear-gradient(rgba(0,0,0,.55),rgba(0,0,0,.55)),url('/background.jpg');background-position:center;background-size:cover;background-attachment:fixed;background-repeat:no-repeat}.wrap{display:flex;align-items:center;justify-content:center;height:100%}.card{background:rgba(255,255,255,.08);backdrop-filter:blur(8px);padding:24px 20px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.35);width:360px}select,button{appearance:none;background:rgba(0,0,0,.35);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px 16px;font-size:16px;outline:none;width:100%}button{margin-top:10px;cursor:pointer}#status{margin-top:10px;font-size:12px;opacity:.95;white-space:pre-wrap}a{color:#9ddcff;text-decoration:none}</style></head><body><div class="wrap"><div class="card"><h1 style="margin:0 0 12px 0;font-size:18px">Choose country</h1><form id="f"><select name="code"><option value="gb">United Kingdom</option><option value="au">Australia</option><option value="ca">Canada</option><option value="de">Deutschland</option><option value="dk">Danmark</option><option value="es">España</option><option value="fr">France</option><option value="ie">Ireland</option><option value="nl">Nederland</option><option value="nz">New Zealand</option><option value="no">Norge</option><option value="pl">Polska</option><option value="fi">Suomi</option><option value="se">Sverige</option><option value="tr">Türkiye</option><option value="us">United States</option></select><button type="submit">Play MovieStarPlanet</button></form><div id="status"></div><div style="margin-top:8px"><a href="/logs?type=out" target="_blank">stdout</a> · <a href="/logs?type=err" target="_blank">stderr</a></div></div></div><script>const s=document.getElementById("status");let poll=null;document.getElementById("f").addEventListener("submit",async e=>{e.preventDefault();s.textContent="Launching...";if(poll){clearInterval(poll);poll=null};const code=new FormData(e.target).get("code");const r=await fetch("/launch?code="+encodeURIComponent(code),{method:"POST"});const j=await r.json();if(!j.ok){s.textContent=j.message;return};poll=setInterval(async()=>{const rs=await fetch("/status");const js=await rs.json();s.textContent=js.phase.toUpperCase()+": "+js.message;if(js.phase==="running"){clearInterval(poll);poll=null;location.href="/play"} if(js.phase==="error"){clearInterval(poll);poll=null}},600)})</script></body></html>"""
+HTML_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MSP</title>
+<style>
+html,body{height:100%;margin:0;color:#fff;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif}
+body{background-image:linear-gradient(rgba(0,0,0,.55),rgba(0,0,0,.55)),url('/background.jpg');background-position:center;background-size:cover;background-attachment:fixed;background-repeat:no-repeat}
+.wrap{display:flex;align-items:center;justify-content:center;height:100%}
+.card{background:rgba(255,255,255,.08);backdrop-filter:blur(8px);padding:24px 20px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.35);width:360px}
+select,button{appearance:none;background:rgba(0,0,0,.35);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px 16px;font-size:16px;outline:none;width:100%}
+button{margin-top:10px;cursor:pointer}
+#status{margin-top:10px;font-size:12px;opacity:.95;white-space:pre-wrap}
+a{color:#9ddcff;text-decoration:none}
+</style></head>
+<body>
+<div class="wrap"><div class="card">
+  <h1 style="margin:0 0 12px 0;font-size:18px">Choose country</h1>
+  <form id="f">
+    <select name="code">
+      <option value="gb">United Kingdom</option><option value="au">Australia</option><option value="ca">Canada</option>
+      <option value="de">Deutschland</option><option value="dk">Danmark</option><option value="es">España</option>
+      <option value="fr">France</option><option value="ie">Ireland</option><option value="nl">Nederland</option>
+      <option value="nz">New Zealand</option><option value="no">Norge</option><option value="pl">Polska</option>
+      <option value="fi">Suomi</option><option value="se">Sverige</option><option value="tr">Türkiye</option>
+      <option value="us">United States</option>
+    </select>
+    <button type="submit">Play MovieStarPlanet</button>
+  </form>
+  <div id="status"></div>
+  <div style="margin-top:8px"><a href="/logs?type=out" target="_blank">stdout</a> · <a href="/logs?type=err" target="_blank">stderr</a></div>
+</div></div>
+<script>
+const s=document.getElementById("status"); let poll=null;
+document.getElementById("f").addEventListener("submit",async e=>{
+  e.preventDefault();
+  s.textContent="Launching...";
+  if(poll){clearInterval(poll);poll=null}
+  const code=new FormData(e.target).get("code");
+  const r=await fetch("/launch?code="+encodeURIComponent(code),{method:"POST"});
+  const j=await r.json();
+  if(!j.ok){s.textContent=j.message;return}
+  poll=setInterval(async()=>{
+    const rs=await fetch("/status"); const js=await rs.json();
+    s.textContent=js.phase.toUpperCase()+": "+js.message;
+    if(js.phase==="running"){clearInterval(poll);poll=null;location.href="/play"}
+    if(js.phase==="error"){clearInterval(poll);poll=null}
+  },600);
+});
+</script>
+</body></html>"""
 
 STATE={"phase":"idle","message":"","pid":None,"code":None,"tmp":None}
 LOCK=threading.Lock()
@@ -30,9 +77,7 @@ PROCS={"xvfb":None,"wm":None,"vnc":None}
 
 def resolve_novnc_dir():
     d=os.path.join("/opt","novnc")
-    if os.path.isdir(d): return d
-    d2="./novnc"
-    return d2 if os.path.isdir(d2) else None
+    return d if os.path.isdir(d) else ("./novnc" if os.path.isdir("./novnc") else None)
 
 def start_x_stack():
     if PROCS["xvfb"] and PROCS["xvfb"].poll() is None:
@@ -126,43 +171,50 @@ if NOVNC_DIR:
 def boot():
     start_x_stack()
 
-@app.get("/",response_class=HTMLResponse)
+@app.get("/", response_class=HTMLResponse)
 def index():
     return HTML_PAGE
 
-@app.get("/play",response_class=HTMLResponse)
+@app.get("/play", response_class=HTMLResponse)
 def play():
     if not NOVNC_DIR:
-        return HTMLResponse("<!DOCTYPE html><meta charset='utf-8'><body style='margin:0;background:#000;color:#fff;font:14px system-ui;padding:16px'>noVNC not found. Use Docker with the provided Dockerfile or add noVNC to ./novnc.</body>")
-    # Use relative 'ws' path so noVNC hits this app at /ws
+        return HTMLResponse(
+            "<!DOCTYPE html><meta charset='utf-8'><body style='margin:0;background:#000;color:#fff;font:14px system-ui;padding:16px'>"
+            "noVNC not found. Use Docker with the provided Dockerfile or add ./novnc.</body>"
+        )
+    # NOTE: no leading slash -> 'path=ws' prevents //ws in URL
     u="/novnc/vnc_lite.html?path=ws&autoconnect=true&resize=scale&reconnect=1&quality=6&title=MovieStarPlanet"
-    return f"<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>MovieStarPlanet</title><style>html,body{{height:100%;margin:0;background:#000}}</style><script>location.href='{u}';</script><a href='{u}' style='color:#8cf'>Open Viewer</a>"
+    return (
+        "<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>MovieStarPlanet</title><style>html,body{height:100%;margin:0;background:#000}</style>"
+        f"<script>location.href='{u}';</script><a href='{u}' style='color:#8cf'>Open Viewer</a>"
+    )
 
 @app.get("/background.jpg")
 def bg():
     if os.path.exists("background.jpg"):
         return FileResponse("background.jpg", media_type="image/jpeg")
-    return PlainTextResponse("not found",status_code=404)
+    return PlainTextResponse("not found", status_code=404)
 
 @app.get("/status")
 def status():
     with LOCK:
         return JSONResponse(STATE.copy())
 
-@app.get("/logs",response_class=PlainTextResponse)
+@app.get("/logs", response_class=PlainTextResponse)
 def logs(type: str = Query("out")):
     with LOCK:
         tmp=STATE.get("tmp")
     if not tmp:
-        return PlainTextResponse("no run",status_code=404)
-    path=os.path.join(tmp,"adl.out" if type!="err" else "adl.err")
+        return PlainTextResponse("no run", status_code=404)
+    path=os.path.join(tmp, "adl.out" if type!="err" else "adl.err")
     if not os.path.exists(path):
-        return PlainTextResponse("no logs",status_code=404)
+        return PlainTextResponse("no logs", status_code=404)
     try:
-        with open(path,"rb") as f: data=f.read()
+        with open(path, "rb") as f: data=f.read()
         return data.decode(errors="ignore")[-10000:]
     except:
-        return PlainTextResponse("unreadable",status_code=500)
+        return PlainTextResponse("unreadable", status_code=500)
 
 @app.post("/launch")
 def launch(code: str = Query("gb")):
@@ -171,43 +223,37 @@ def launch(code: str = Query("gb")):
         with LOCK: STATE.update({"phase":"error","message":"AIRSDK or SWF missing","pid":None,"code":1,"tmp":None})
         return JSONResponse({"ok":False,"message":STATE["message"]})
     with LOCK: STATE.update({"phase":"launch","message":"Launching...","pid":None,"code":None})
-    threading.Thread(target=run_swf,args=(code,),daemon=True).start()
+    threading.Thread(target=run_swf, args=(code,), daemon=True).start()
     return JSONResponse({"ok":True,"message":"Launching..."})
 
+# ---- WebSocket bridge (supports 'binary' or 'base64') ----
 @app.websocket("/ws")
 async def ws_proxy(ws: WebSocket):
-    # Negotiate subprotocol with noVNC: prefer 'binary', fallback to 'base64'
-    req_subs = (ws.headers.get("sec-websocket-protocol") or "").replace(" ", "").split(",")
-    sub = "binary" if "binary" in req_subs else ("base64" if "base64" in req_subs else None)
-    if sub:
-        await ws.accept(subprotocol=sub)
-    else:
-        await ws.accept()
+    req = (ws.headers.get("sec-websocket-protocol") or "").replace(" ", "").split(",")
+    sub = "binary" if "binary" in req else ("base64" if "base64" in req else None)
+    if sub: await ws.accept(subprotocol=sub)
+    else:   await ws.accept()
     use_base64 = (sub == "base64")
     try:
         reader, writer = await asyncio.open_connection("127.0.0.1", 5900)
-    except Exception:
-        await ws.close(code=1011)
-        return
+    except:
+        await ws.close(code=1011); return
 
     async def ws_to_tcp():
         try:
             while True:
-                message = await ws.receive()
-                t = message.get("type")
+                msg = await ws.receive()
+                t = msg.get("type")
                 if t == "websocket.receive":
-                    if message.get("bytes") is not None:
-                        data = message["bytes"]
+                    if msg.get("bytes") is not None:
+                        data = msg["bytes"]
                     else:
-                        txt = message.get("text") or ""
-                        data = base64.b64decode(txt) if use_base64 else txt.encode("latin1", "ignore")
+                        txt = msg.get("text") or ""
+                        data = base64.b64decode(txt) if use_base64 else txt.encode("latin1","ignore")
                     if data:
-                        writer.write(data)
-                        await writer.drain()
+                        writer.write(data); await writer.drain()
                 elif t == "websocket.disconnect":
                     break
-        except Exception:
-            pass
         finally:
             try: writer.close()
             except: pass
@@ -216,23 +262,27 @@ async def ws_proxy(ws: WebSocket):
         try:
             while True:
                 data = await reader.read(32768)
-                if not data:
-                    break
-                if use_base64:
-                    await ws.send_text(base64.b64encode(data).decode("ascii"))
-                else:
-                    await ws.send_bytes(data)
-        except Exception:
-            pass
+                if not data: break
+                if use_base64: await ws.send_text(base64.b64encode(data).decode("ascii"))
+                else:          await ws.send_bytes(data)
         finally:
             try: await ws.close()
             except: pass
 
     await asyncio.gather(ws_to_tcp(), tcp_to_ws())
 
+# extra aliases some noVNC builds expect
+@app.websocket("/websockify")
+async def ws_proxy_websockify(ws: WebSocket):  # alias
+    await ws_proxy(ws)
+
+@app.websocket("/novnc/ws")
+async def ws_proxy_under_novnc(ws: WebSocket):  # alias
+    await ws_proxy(ws)
+
 def main():
     port=int(os.environ.get("PORT","8000"))
-    uvicorn.run(app,host="0.0.0.0",port=port,log_level="warning")
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
